@@ -2,15 +2,16 @@
   <div class="d-flex justify-content-between align-items-center">
     <div class="footer-left">
       <p class="mb-0">
-        © {{ 'now' | date: '%Y' }} 
-        <a href="{{ site.social.links[0] | default: '/' }}">{{ site.author.name | default: 'Author' }}</a>.
+        © {{ 'now' | date: '%Y' }}
+        <a href="{{ site.social.links[0] | default: '/' }}">{{ site.author.name | default: 'gminnimk' }}</a>.
+        <span data-toggle="tooltip" data-placement="top" title="{{ site.locales[site.lang].copyright.tooltip }}">Some rights reserved.</span>
       </p>
     </div>
-  </div>
+
+    </div>
 </footer>
 
 <style>
-  .license-wrapper,
   .share-wrapper a {
     display: none !important;
   }
