@@ -77,7 +77,7 @@ pageviews:
 # Note: Keep empty will follow the system prefer color by default,
 # and there will be a toggle to switch the theme between dark and light
 # on the bottom left of the sidebar.
-theme_mode: # [light | dark]
+theme_mode: light
 
 # The CDN endpoint for media resources.
 # Notice that once it is assigned, the CDN url
