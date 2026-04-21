@@ -88,7 +88,7 @@ JMH의 `-prof gc` 옵션을 활용하여 탈출 분석 최적화를 명시적으
 
 최적화가 꺼진 상태에서는 객체를 생성하기 위해 TLAB(Thread Local Allocation Buffer) 여유 공간을 확인하고 객체 헤더를 설정하는 과정을 거칩니다.
 
-```bash
+```asm
 ; TLAB 공간 확인
 0x00007f...: mov    r10, QWORD PTR[r15+0x60]   
 0x00007f...: lea    r11, [r10+0x18]             ; 24바이트(헤더+필드) 할당 계산
@@ -108,7 +108,7 @@ JMH의 `-prof gc` 옵션을 활용하여 탈출 분석 최적화를 명시적으
 
 반면 탈출 분석이 적용된 코드는 다음과 같이 변경됩니다.
 
-```bash
+```asm
 ; 객체 할당 및 헤더 설정 코드 소거
 0x00007f...: mov    eax, DWORD PTR [r12+0x10]   ; 변수 a를 eax 레지스터로 로드
 0x00007f...: add    eax, DWORD PTR[r12+0x14]   ; 변수 b를 더함 (x + y)
