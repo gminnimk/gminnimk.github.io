@@ -70,10 +70,10 @@ public class EscapeAnalysisBenchmark {
 
 JMH의 `-prof gc` 옵션을 활용하여 탈출 분석 최적화를 명시적으로 껐을 때(Case A)와 켰을 때(Case B)의 지표를 추출했습니다.
 
-| **실험 케이스** | **JVM Options** | **평균 응답 시간** | **작업당 힙 할당량 (B/op)** |
+| **실험 케이스** | **JVM Options** | **평균 응답 시간** | **작업당 힙 할당량 (B/op)** | **GC 발생 횟수 (1분당)** |
 | --- | --- | --- | --- |
-| **Case A (최적화 OFF)** | `-XX:-DoEscapeAnalysis` | `3.541 ns/op` | `24.000 B/op` |
-| **Case B (최적화 ON)** | `-XX:+DoEscapeAnalysis` | `0.979 ns/op` | `≈ 10⁻⁶ B/op` |
+| **Case A (최적화 OFF)** | `-XX:-DoEscapeAnalysis` | `3.007 ns/op` | `24.000 B/op` | `704 counts` |
+| **Case B (최적화 ON)** | `-XX:+DoEscapeAnalysis` | `0.938 ns/op` | `≈ 10⁻⁶ B/op` | `≈ 0 counts` |
 
 최적화를 비활성화한 Case A에서는 Point 객체가 생성될 때마다 메타데이터와 필드를 포함해 약 24바이트의 단명 객체가 Eden 영역에 쌓였습니다. 반면 탈출 분석이 활성화된 Case B에서는 할당률이 사실상 0바이트로 수렴했습니다. 객체 생성이 생략되어 메모리 접근 비용이 절감되었고, 결과적으로 응답 시간도 향상되었습니다.
 
