@@ -81,6 +81,8 @@ Case A에서는 Point 객체 생성 시마다 메타데이터와 필드를 포�
 
 `hsdis` 플러그인을 활용해 JIT 컴파일러가 생성한 x86 어셈블리 코드를 분석했습니다.
 
+<br>
+
 **최적화 이전: 힙 할당 방식 (Escape Analysis OFF)**
 
 객체 생성을 위해 TLAB(Thread Local Allocation Buffer) 여유 공간을 확인하고 객체 헤더를 설정합니다.
@@ -100,6 +102,8 @@ Case A에서는 Point 객체 생성 시마다 메타데이터와 필드를 포�
 ```
 
 `new Point()` 호출 시 메모리 공간 계산과 클래스 메타데이터 설정 등 관리 비용이 발생합니다.
+
+<br>
 
 **최적화 이후: 스칼라 치환 적용 (Escape Analysis ON)**
 
