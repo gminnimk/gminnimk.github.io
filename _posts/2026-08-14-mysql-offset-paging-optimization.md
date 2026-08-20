@@ -6,8 +6,6 @@ tags: [mysql, database, performance, batch, spring-batch, indexing, optimization
 description: 100만 건 대용량 정산 배치 가동 시 발생하는 RDBMS 물리적 병목을 범위 파티셔닝과 커서 스트리밍으로 해결한 성능 최적화 과정을 분석합니다.
 ---
 
-# MySQL OFFSET 페이징이 100만 건에서 급격히 지연되는 이유: EXPLAIN ANALYZE와 InnoDB Buffer Pool로 분석한 커서 스트리밍 최적화
-
 > **📌 개요**
 > 
 > 본 포스팅은 KickSync 대용량 결제 정산 시스템(100만 건)을 운영하며 발생한 RDBMS 물리적 병목(`LIMIT/OFFSET` $O(N^2)$ 스캔, InnoDB Buffer Pool LRU Churn, `fsync()` I/O 부하)을 식별하고 **범위 파티셔닝, 커서 스트리밍, 인메모리 Micro-batch 집계**를 통해 배치 처리 성능을 최적화(14분 16초 ➔ 1분 9초, Disk Write 1.8GB ➔ 26.9MB)한 엔지니어링 과정을 다룹니다.
