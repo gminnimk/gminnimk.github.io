@@ -8,7 +8,7 @@ description: 100만 건 대용량 정산 배치 가동 시 발생하는 RDBMS �
 
 > **📌 개요**
 > 
-> 본 포스팅은 KickSync 대용량 결제 정산 시스템(100만 건)을 운영하며 발생한 RDBMS 물리적 병목(`LIMIT/OFFSET` $O(N^2)$ 스캔, InnoDB Buffer Pool LRU Churn, `fsync()` I/O 부하)을 식별하고 **범위 파티셔닝, 커서 스트리밍, 인메모리 Micro-batch 집계**를 통해 배치 처리 성능을 최적화(14분 16초 ➔ 1분 9초, Disk Write 1.8GB ➔ 26.9MB)한 엔지니어링 과정을 다룹니다.
+> 본 포스팅은 KickSync 대용량 결제 정산 시스템(100만 건)을 운영하며 발생한 RDBMS 물리적 병목(`LIMIT/OFFSET` O(N^2) 스캔, InnoDB Buffer Pool LRU Churn, `fsync()` I/O 부하)을 식별하고 **범위 파티셔닝, 커서 스트리밍, 인메모리 Micro-batch 집계**를 통해 배치 처리 성능을 최적화(14분 16초 ➔ 1분 9초, Disk Write 1.8GB ➔ 26.9MB)한 엔지니어링 과정을 다룹니다.
 
 <br>
 
@@ -45,7 +45,7 @@ LIMIT 1000 OFFSET 900000;
 
 <img width="1152" height="583" alt="image" src="https://github.com/user-attachments/assets/53f77d98-52ee-4a54-bae4-1ddd7e8963ef" />
 
-### 1) B+Tree Leaf 노드 순회와 $O(N)$ 폐기 비용
+### 1) B+Tree Leaf 노드 순회와 O(N) 폐기 비용
 
 InnoDB의 Clustered Index는 B+Tree 구조로 이루어져 있고 리프 노드들은 양방향 연결 리스트로 연결되어 있습니다.
 
@@ -53,9 +53,9 @@ InnoDB의 Clustered Index는 B+Tree 구조로 이루어져 있고 리프 노드�
 * 핵심은 “지나치는 90만 건도 디스크 및 버퍼 풀에서 메모리로 로드한 뒤 버린다”는 점입니다.
 * 배치가 1페이지(OFFSET 0)부터 1,000페이지(OFFSET 999,000)까지 진행되면 총 스캔 횟수는 아래와 같이 누적됩니다.
 
-$$
-\sum_{k=1}^{1000} (1000 \times k) = 1000 \times \frac{1000 \times 1001}{2} = 500,500,000
-$$
+
+<img width="70%" height="50%" alt="image" src="https://github.com/user-attachments/assets/26a3d608-4fd3-41b8-be8e-872a88a8b8b9" />
+
 
 100만 건 처리 시 엔진이 내부적으로 읽고 버린 레코드는 약 5억 건(500,500,000건)에 달합니다.
 
@@ -90,11 +90,11 @@ MySQL 8.0의 `EXPLAIN ANALYZE`를 통해 OFFSET 방식과 인덱스 범위 탐�
     -> Index range scan on settlements using PRIMARY, with index condition: (settlements.id > 900000)  (cost=201.50 rows=1000) (actual time=0.030..0.762 rows=1000 loops=1)
 ```
 
-* B+Tree의 루트부터 수직 탐색( $O(\log N)$ )하여 `id = 900001` 리프 노드로 이동합니다.
+* B+Tree의 루트부터 수직 탐색( O(\log N) )하여 `id = 900001` 리프 노드로 이동합니다.
 * 불필요한 레코드 스캔 없이 필요한 1,000건의 페이지만 읽어 **0.854ms** 만에 연산을 종료합니다.
 
 > **💡 Keyset 페이징과 소켓 커서 스트리밍의 차이**  
-> Keyset(No-Offset) 방식이 매 청크마다 인덱스 B+Tree 수직 탐색( $O(\log N)$ )을 통해 성능 개선을 이끌어낸다면 본 프로젝트에 적용한 `JdbcCursorItemReader`는 단 한 번의 커넥션 소켓 오픈으로 커서를 유지하며 $O(N)$ 선형 전진만 수행하므로 쿼리 파싱 및 B+Tree 재탐색 오버헤드를 배제합니다.
+> Keyset(No-Offset) 방식이 매 청크마다 인덱스 B+Tree 수직 탐색( O(\log N) )을 통해 성능 개선을 이끌어낸다면 본 프로젝트에 적용한 `JdbcCursorItemReader`는 단 한 번의 커넥션 소켓 오픈으로 커서를 유지하며 O(N) 선형 전진만 수행하므로 쿼리 파싱 및 B+Tree 재탐색 오버헤드를 배제합니다.
 
 <br>
 
@@ -109,7 +109,7 @@ OFFSET 방식의 한계를 극복하기 위해 배치 파이프라인 구조를 
 반복적인 `LIMIT/OFFSET` 쿼리 발송을 중단하고 데이터베이스 네트워크 커넥션 소켓을 유지한 채 `ResultSet.next()`로 레코드를 1건씩 스트리밍 수신했습니다.
 
 * **B+Tree 재탐색 제거:** 쿼리 파싱 및 B+Tree 순회 비용을 단 1회로 통제했습니다.
-* **선형 탐색 $O(N)$ 유지:** DB 엔진은 이미 열린 커서의 위치에서 포워드 스캔만 수행하므로 전체 100만 건 조회 시간을 선형적으로 단축했습니다.
+* **선형 탐색 O(N) 유지:** DB 엔진은 이미 열린 커서의 위치에서 포워드 스캔만 수행하므로 전체 100만 건 조회 시간을 선형적으로 단축했습니다.
 
 ### 2) `PartnerIdPartitioner` 기반의 락 격리
 
@@ -174,7 +174,7 @@ OFFSET 방식의 한계를 극복하기 위해 배치 파이프라인 구조를 
 
 ## 7. 결론: ORM 추상화 너머 RDBMS 스토리지 엔진을 통제하라
 
-`JpaPagingItemReader`의 간결한 인터페이스 뒤에는 **B+Tree $O(N^2)$ 순회, Buffer Pool 오염, 대량의 `fsync()` I/O 부하**라는 물리적 비용이 발생하고 있었습니다.
+`JpaPagingItemReader`의 간결한 인터페이스 뒤에는 **B+Tree O(N^2) 순회, Buffer Pool 오염, 대량의 `fsync()` I/O 부하**라는 물리적 비용이 발생하고 있었습니다.
 
 대규모 데이터를 다루는 백엔드 엔지니어링의 핵심은 프레임워크의 편의 기능에 머무르지 않고 “이 코드가 스토리지 엔진과 물리 디스크, 네트워크 소켓에서 실제로 어떻게 실행되는가?”를 추적하여 검증하는 데 있습니다.
 
