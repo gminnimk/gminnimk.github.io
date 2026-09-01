@@ -6,8 +6,6 @@ tags: [distributed-lock, redis, redisson, spring-boot, transaction, deadlock, ci
 description: 선착순 주문 고부하 환경에서 분산 락과 DB 트랜잭션 생명주기 불일치로 인한 초과 판매와 데드락을 SpEL 정렬 락, REQUIRES_NEW 격리, Read/Write 서킷브레이커로 해결한 과정을 분석합니다.
 ---
 
-# 분산 락을 걸었는데 왜 재고가 깨질까? @Transactional 생명주기 불일치와 SpEL 정렬 락으로 해결한 동시성 제어
-
 > **📌 개요**
 > 
 > 
