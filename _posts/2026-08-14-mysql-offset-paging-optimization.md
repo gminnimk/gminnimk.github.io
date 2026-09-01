@@ -61,7 +61,7 @@ InnoDB의 Clustered Index는 B+Tree 구조로 이루어져 있고 리프 노드�
 
 ### 2) Buffer Pool 오염과 LRU 리스트 Churn
 
-InnoDB는 디스크 I/O를 줄이기 위해 16KB 단위의 데이터 페이지를 메모리(InnoDB Buffer Pool)에 캐싱합니다. 버퍼 풀은 **Young(5/8)과 Old(3/8) 서브리스트**로 구성된 LRU 알고리즘(Midpoint Insertion Strategy)으로 관리됩니다.
+InnoDB는 디스크 I/O를 줄이기 위해 16KB 단위의 데이터 페이지를 메모리(InnoDB Buffer Pool)에 캐싱합니다. 버퍼 풀은 **Young(5/8)과 Old(3/8) 서브리스트**로 구성된 LRU 알고리즘으로 관리됩니다.
 
 * OFFSET이 커질수록 수만 개의 16KB 데이터 페이지가 디스크에서 읽혀 Buffer Pool의 Old 영역으로 대량 유입됩니다.
 * MySQL의 기본 `innodb_old_blocks_time` 보호 설정에도 불구하고 100만 건의 연속적인 풀 스캔성 OFFSET 연산은 수만 개의 16KB 페이지를 단시간에 밀어내며 Old Sublist를 넘어 버퍼 풀 전체의 Cache Churn(오염 및 Eviction)을 유발합니다.
@@ -90,11 +90,11 @@ MySQL 8.0의 `EXPLAIN ANALYZE`를 통해 OFFSET 방식과 인덱스 범위 탐�
     -> Index range scan on settlements using PRIMARY, with index condition: (settlements.id > 900000)  (cost=201.50 rows=1000) (actual time=0.030..0.762 rows=1000 loops=1)
 ```
 
-* B+Tree의 루트부터 수직 탐색( O(\log N) )하여 `id = 900001` 리프 노드로 이동합니다.
+* B+Tree의 루트부터 수직 탐색( O(log N) )하여 `id = 900001` 리프 노드로 이동합니다.
 * 불필요한 레코드 스캔 없이 필요한 1,000건의 페이지만 읽어 **0.854ms** 만에 연산을 종료합니다.
 
 > **💡 Keyset 페이징과 소켓 커서 스트리밍의 차이**  
-> Keyset(No-Offset) 방식이 매 청크마다 인덱스 B+Tree 수직 탐색( O(\log N) )을 통해 성능 개선을 이끌어낸다면 본 프로젝트에 적용한 `JdbcCursorItemReader`는 단 한 번의 커넥션 소켓 오픈으로 커서를 유지하며 O(N) 선형 전진만 수행하므로 쿼리 파싱 및 B+Tree 재탐색 오버헤드를 배제합니다.
+> Keyset(No-Offset) 방식이 매 청크마다 인덱스 B+Tree 수직 탐색( O(log N) )을 통해 성능 개선을 이끌어낸다면 본 프로젝트에 적용한 `JdbcCursorItemReader`는 단 한 번의 커넥션 소켓 오픈으로 커서를 유지하며 O(N) 선형 전진만 수행하므로 쿼리 파싱 및 B+Tree 재탐색 오버헤드를 배제합니다.
 
 <br>
 
@@ -168,7 +168,7 @@ OFFSET 방식의 한계를 극복하기 위해 배치 파이프라인 구조를 
     * **대응:** Processor 로직을 순수 인메모리 연산으로 유지하고 청크 버퍼 크기를 최적화했습니다.
 3. **스레드 스큐 현상:**
     * `PartnerIdPartitioner`로 단순 ID 범위를 균등 분할할 경우 특정 대형 입점사에 데이터가 편중되어 1개 스레드만 지연되는 롱테일 병목이 발생할 수 있습니다.
-    * **대응:** 데이터 편차가 심한 도메인일 경우 ID 범위 분할 대신 사전 집계 통계 기반의 동적 파티셔닝(Dynamic Range Partitioning) 구조를 검토해야 합니다.
+    * **대응:** 데이터 편차가 심한 도메인일 경우 ID 범위 분할 대신 사전 집계 통계 기반의 동적 파티셔닝 구조를 검토해야 합니다.
 
 <br>
 
