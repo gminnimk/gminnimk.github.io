@@ -89,7 +89,7 @@ public void createOrder(OrderRequest request) {
 
 위의 3대 물리적 결함을 해결하기 위해 락과 트랜잭션의 생명주기를 물리적으로 분리하고 외부 통신망을 서킷브레이커로 격리했습니다.
 
-<img width="1682" height="1541" alt="image" src="https://github.com/user-attachments/assets/f0d8e529-dd11-4d1d-af92-5d477267a91d" />
+<img width="1682" height="1541" alt="P(2) - TO-BE drawio" src="https://github.com/user-attachments/assets/db5b4cbe-cae0-4bce-a946-624bcbaacc41" />
 
 ### 1) SpEL 파싱 기반 ID 오름차순 정렬 락 (`DistributedLockAop`)
 
