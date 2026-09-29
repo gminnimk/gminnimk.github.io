@@ -43,7 +43,7 @@ LIMIT 1000 OFFSET 900000;
 
 `LIMIT N OFFSET M` 쿼리가 실행될 때 MySQL 엔진 내부에서는 다음과 같은 물리적 작업이 발생합니다.
 
-<img width="1152" height="583" alt="image" src="https://github.com/user-attachments/assets/53f77d98-52ee-4a54-bae4-1ddd7e8963ef" />
+<img width="1152" height="583" alt="image" src="https://github.com/user-attachments/assets/b88843f4-9eed-418f-afd4-6b321c645dc1" />
 
 ### 1) B+Tree Leaf 노드 순회와 O(N) 폐기 비용
 
