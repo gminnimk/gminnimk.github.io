@@ -1,8 +1,10 @@
-## title: 자바 객체는 무조건 힙에 생성될까? 스칼라 치환과 어셈블리로 증명한 메모리 최적화
+---
+title: 자바 객체는 무조건 힙에 생성될까? 스칼라 치환과 어셈블리로 증명한 메모리 최적화
 date: 2026-04-06 20:30:00 +0900
 categories: [Java, JVM]
 tags: [jit, jvm, optimization, escape-analysis, performance, assembly]
 description: JIT 컴파일러가 객체를 해체하고 레지스터에 할당하는 스칼라 치환의 원리를 데이터와 기계어 수준에서 분석합니다.
+---
 
 ## 1. 객체지향의 딜레마와 메모리 성능
 
