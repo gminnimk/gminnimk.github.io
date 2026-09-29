@@ -49,7 +49,7 @@ public void createOrder(OrderRequest request) {
 
 ## 2. 물리 계층 딥다이브: 무엇이 동시성을 무너뜨리는가?
 
-<img width="1422" height="1012" alt="image" src="https://github.com/user-attachments/assets/321583a1-1cc6-4f28-a39e-96ee27a51a78" />
+<img width="1422" height="1012" alt="image" src="https://github.com/user-attachments/assets/a3723a38-164b-4aa1-9c99-ba064032e489" />
 
 ### 1) 결함 1: Spring AOP 프록시 순서와 락 조기 해제
 
