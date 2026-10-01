@@ -89,7 +89,7 @@ public void createOrder(OrderRequest request) {
 
 위의 3대 물리적 결함을 해결하기 위해 락과 트랜잭션의 생명주기를 물리적으로 분리하고 외부 통신망을 서킷브레이커로 격리했습니다.
 
-<img width="1682" height="1541" alt="P(2) - TO-BE drawio" src="https://github.com/user-attachments/assets/db5b4cbe-cae0-4bce-a946-624bcbaacc41" />
+<img width="1682" height="1541" alt="image" src="https://github.com/user-attachments/assets/d6d0f7b7-6288-428d-83b0-a2f165f98c3d" />
 
 ### 1) SpEL 파싱 기반 ID 오름차순 정렬 락 (`DistributedLockAop`)
 
@@ -171,8 +171,8 @@ public class AopForTransaction {
 | **WAS CPU 점유율 (`docker stats`)** | 97.13% (스레드 병목 포화) | **48.13% (안정 상태)** | **유휴 대기 제거 및 CPU 부하 안정화** |
 | **MySQL CPU 점유율 (`docker stats`)** | 3.53% (락 대기 정체) | **0.56%** | **DB 불필요 경합 제거 및 부하 84% 절감** |
 | **Scouter Active 스레드** | 200개 포화 후 Hanging (정체) | **최대 3개 (`RUNNABLE`) 이하 회수** | **스레드 자원 누수 및 고갈 해결** |
-| **초과 판매 수량** | 초과 판매 발생 (정합성 파괴) | **0건 (오차율 0.00%)** | **18.5만 건 중 재고 오차율 0.00% 통제** |
-| **시스템 가용성** | 0.00% (인증 연쇄 마비로 전면 실패) | **100.00% (Error Rate 0.00%)** | **외부 장애 전이 차단 및 비즈니스 연속성 유지** |
+| **초과 판매 수량** | 초과 판매 발생 (정합성 파괴) | **0건 (오차율 0%)** | **18.5만 건 중 재고 오차율 0% 통제** |
+| **시스템 가용성** | 0% (인증 연쇄 마비로 전면 실패) | **100% (Error Rate 0%)** | **외부 장애 전이 차단 및 비즈니스 연속성 유지** |
 
 ```
 [AS-IS k6 & Scouter APM]
