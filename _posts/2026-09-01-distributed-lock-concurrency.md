@@ -89,7 +89,7 @@ public void createOrder(OrderRequest request) {
 
 위의 3대 물리적 결함을 해결하기 위해 락과 트랜잭션의 생명주기를 물리적으로 분리하고 외부 통신망을 서킷브레이커로 격리했습니다.
 
-<img width="1682" height="1541" alt="image" src="https://github.com/user-attachments/assets/d6d0f7b7-6288-428d-83b0-a2f165f98c3d" />
+<img width="2034" height="1728" alt="image" src="https://github.com/user-attachments/assets/027106fc-b767-4171-9bbe-2cc506834908" />
 
 ### 1) SpEL 파싱 기반 ID 오름차순 정렬 락 (`DistributedLockAop`)
 
@@ -195,10 +195,10 @@ public class AopForTransaction {
 1. **`REQUIRES_NEW`에 따른 커넥션 풀 이중 점유 리스크:**
     - 바깥쪽 트랜잭션이 살아있는 상태에서 `REQUIRES_NEW`를 호출하면 단일 스레드가 동시에 2개의 DB 커넥션을 점유하게 되어 커넥션 고갈이 발생할 수 있습니다.
     - **대응:** 바깥쪽 서비스 메서드에서는 `@Transactional`을 제거하고 순수 비즈니스 상태 변경이 일어나는 내부 지점만 `AopForTransaction`으로 진입하도록 스코프를 엄격히 제한했습니다.
-2. **락 대기 시간(`waitTime`)과 사용자 경험 간의 트레이드오프:**
-    - 락 대기 시간(`waitTime`)을 길게 잡으면 재고를 얻을 확률은 늘어나지만 톰캣 스레드가 장시간 점유됩니다. 반대로 너무 짧으면 409 Conflict 예외가 증가합니다.
+2. **락 대기 시간과 사용자 경험 간의 트레이드오프:**
+    - 락 대기 시간을 길게 잡으면 재고를 얻을 확률은 늘어나지만 톰캣 스레드가 장시간 점유됩니다. 반대로 너무 짧으면 409 Conflict 예외가 증가합니다.
     - **대응:** 선착순 한정판 도메인 특성에 맞춰 `waitTime`을 **50ms(또는 0ms Fail-Fast)**로 짧게 튜닝하여 경쟁에서 밀린 요청은 0ms 만에 즉시 409를 반환하고 톰캣 스레드를 다른 사용자 요청으로 회수했습니다.
-3. **Redis 단일 장애점(SPOF) 리스크:**
+3. **Redis 단일 장애점 리스크:**
     - 분산 락은 Redis 클러스터의 가용성에 의존합니다. Redis 인스턴스 다운 시 주문 전체가 중단될 수 있습니다.
     - **대응:** 실제 운영 환경에서는 Redis Sentinel 또는 Cluster 구성을 통해 고가용성을 확보하고 필요 시 비상 모드로 RDBMS 비관적 락(`PESSIMISTIC_WRITE`)으로 자동 우회하는 Fallback 전략을 수립해야 합니다.
 
