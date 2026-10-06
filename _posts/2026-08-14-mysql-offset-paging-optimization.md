@@ -102,7 +102,7 @@ MySQL 8.0의 `EXPLAIN ANALYZE`를 통해 OFFSET 방식과 인덱스 범위 탐�
 
 OFFSET 방식의 한계를 극복하기 위해 배치 파이프라인 구조를 재설계했습니다.
 
-<img width="1102" height="1382" alt="image" src="https://github.com/user-attachments/assets/f247116f-c18d-4cdb-ac95-d4af63fbe1e2" />
+<img width="1360" height="1672" alt="image" src="https://github.com/user-attachments/assets/c3de9af7-784c-4fd3-b183-f027f061bdf8" />
 
 ### 1) `JdbcCursorItemReader`를 통한 소켓 스트리밍 전환
 
