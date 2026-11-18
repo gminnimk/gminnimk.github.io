@@ -89,11 +89,11 @@ MySQL 8.0의 `EXPLAIN ANALYZE`를 통해 OFFSET 방식과 인덱스 범위 탐�
     -> Index range scan on settlements using PRIMARY, with index condition: (settlements.id > 900000)  (cost=201.50 rows=1000) (actual time=0.030..0.762 rows=1000 loops=1)
 ```
 
-* B+Tree의 루트부터 수직 탐색( O(\log N) )하여 `id = 900001` 리프 노드로 이동합니다.
+* B+Tree의 루트부터 수직 탐색( O(log N) )하여 `id = 900001` 리프 노드로 이동합니다.
 * 불필요한 레코드 스캔을 차단하고 필요한 1,000건의 페이지만 읽어 **0.854ms** 만에 연산을 종료합니다.
 
 > **💡 Keyset 페이징과 소켓 커서 스트리밍의 차이**  
-> Keyset(No-Offset) 방식이 매 청크마다 인덱스 B+Tree 수직 탐색( O(\log N) )을 통해 성능 개선을 이끌어낸다면 본 프로젝트에 적용한 `JdbcCursorItemReader`는 단 한 번의 커넥션 소켓 오픈으로 커서를 유지하며 선형 탐색( O(N) )만 수행하므로 쿼리 파싱 및 B+Tree 수직 탐색 오버헤드를 배제합니다.
+> Keyset(No-Offset) 방식이 매 청크마다 인덱스 B+Tree 수직 탐색( O(log N) )을 통해 성능 개선을 이끌어낸다면 본 프로젝트에 적용한 `JdbcCursorItemReader`는 단 한 번의 커넥션 소켓 오픈으로 커서를 유지하며 선형 탐색( O(N) )만 수행하므로 쿼리 파싱 및 B+Tree 수직 탐색 오버헤드를 배제합니다.
 
 <br>
 
