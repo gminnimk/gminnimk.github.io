@@ -8,12 +8,13 @@ description: 100만 건 대용량 정산 배치 가동 시 발생하는 RDBMS �
 
 > **📌 개요**
 > 
-> 본 포스팅은 KickSync 대용량 결제 정산 시스템(100만 건)을 운영하며 발생한 RDBMS 물리적 병목(`LIMIT/OFFSET` 누적 스캔에 따른 O(N^2) 시간 복잡도, InnoDB Buffer Pool LRU Churn, `fsync()` I/O 부하) 현상을 분석합니다. 나아가 이를 **범위 파티셔닝과 커서 스트리밍, 인메모리 사전 집계**로 제어하여 물리적 처리 시간을 14분 16초에서 1분 9초로 단축하고 물리 디스크 쓰기를 98.5% 절감한 아키텍처 튜닝 과정을 다룹니다.
+> 본 포스팅은 KickSync 대용량 결제 정산 시스템(100만 건 규모 모의 정산)을 구현·검증하며 발생한 RDBMS 물리적 병목(`LIMIT/OFFSET` 누적 스캔에 따른 O(N^2) 시간 복잡도, InnoDB Buffer Pool LRU Churn, `fsync()` I/O 부하) 현상을 분석합니다. 나아가 이를 **범위 파티셔닝과 커서 스트리밍, 인메모리 사전 집계**로 제어하여 물리적 처리 시간을 14분 16초에서 1분 9초로 단축하고 물리 디스크 쓰기를 98.5% 절감한 아키텍처 튜닝 과정을 다룹니다.
+
 <br>
 
 ## 1. 100만 건 정산 배치의 딜레마: “1,000건만 읽는데 왜 DB가 멈출까?”
 
-이커머스 플랫폼 KickSync에서는 매일 자정 입점사별 결제 내역 100만 건을 취합하여 일별 정산 통계 테이블(`daily_sales_stats`)을 생성하는 배치 작업을 수행합니다. 대규모 데이터의 순차 처리를 위해 Spring Batch의 표준 페이징 리더인 `JpaPagingItemReader`를 적용했습니다.
+이커머스 플랫폼 KickSync에서는 매일 자정 입점사별 결제 내역 100만 건을 취합하여 일별 정산 통계 테이블(`settlements` / `daily_sales_stats`)을 생성하는 배치 작업을 수행합니다. 대규모 데이터의 순차 처리를 위해 Spring Batch의 표준 페이징 리더인 `JpaPagingItemReader`를 적용했습니다.
 
 그러나 단일 Pod 자원 제한 환경(WAS CPU 0.8 Core / Memory 1.5 GiB, DB CPU 1.0 Core / Memory 2.0 GiB, HikariCP 20)에서 배치를 가동하자 임계치에 도달하는 리소스 병목이 발생했습니다.
 
@@ -22,10 +23,9 @@ description: 100만 건 대용량 정산 배치 가동 시 발생하는 RDBMS �
 * **커넥션 고갈:** 쿼리 지연으로 인한 `HikariCP Connection Leak` 경보 빈발
 
 ```sql
--- JpaPagingItemReader가 900번째 페이지에서 생성한 쿼리
+-- 단일 정산일 100만 건 적재 기준, JpaPagingItemReader가 900번째 페이지에서 생성한 페이징 쿼리(단순화 모델)
 SELECT *
 FROM settlements
-WHERE settlement_date = '2026-06-01'
 ORDER BY id ASC
 LIMIT 1000 OFFSET 900000;
 ```
@@ -52,9 +52,7 @@ InnoDB의 Clustered Index는 B+Tree 구조로 이루어져 있고 리프 노드�
 * 핵심은 “지나치는 90만 건도 디스크 및 버퍼 풀에서 메모리로 로드한 뒤 버린다”는 점입니다.
 * 배치가 1페이지(OFFSET 0)부터 1,000페이지(OFFSET 999,000)까지 진행되면 총 스캔 횟수는 아래와 같이 누적됩니다.
 
-
 <img width="70%" height="50%" alt="image" src="https://github.com/user-attachments/assets/26a3d608-4fd3-41b8-be8e-872a88a8b8b9" />
-
 
 100만 건 처리 시 엔진이 내부적으로 읽고 버린 레코드는 약 5억 건(500,500,000건)에 달합니다.
 
@@ -80,7 +78,7 @@ MySQL 8.0의 `EXPLAIN ANALYZE`를 통해 OFFSET 방식과 인덱스 범위 탐�
 ```
 
 * `Index scan on settlements`: 엔진은 901,000개의 인덱스 엔트리를 순차 스캔하는 데 **712.89ms**를 소비했습니다.
-* `Limit/Offset`: 90만 개를 버리고 1,000개만 반환하는 필터링 단계까지 총 **774.23ms**의 지연이 발생했습니다. 배치가 후반부로 갈수록 단일 쿼리 지연이 **0.77초**에 도달하며 1,000번의 페이징 조회와 **100만 회의 단건 쓰기 쿼리**가 누적되어 전체 배치에서 총 **774초(약 13분)** 의 SQL I/O 병목을 유발합니다.
+* `Limit/Offset`: 90만 개를 버리고 1,000개만 반환하는 필터링 단계까지 단일 쿼리당 **774.23ms**의 지연이 발생했습니다. 배치가 후반부로 갈수록 단일 쿼리 지연이 **0.77초**에 도달하며 1,000번의 페이징 조회와 **100만 회의 단건 쓰기 쿼리(총 1,004,027회)**가 누적되어 전체 배치에서 총 **774.6초(774,656ms, 약 13분)**의 SQL I/O 병목을 유발합니다.
 
 ### TO-BE: 커서 기반 조건절 탐색 (`WHERE id > ? LIMIT 1000`) 실행 계획
 
@@ -89,25 +87,23 @@ MySQL 8.0의 `EXPLAIN ANALYZE`를 통해 OFFSET 방식과 인덱스 범위 탐�
     -> Index range scan on settlements using PRIMARY, with index condition: (settlements.id > 900000)  (cost=201.50 rows=1000) (actual time=0.030..0.762 rows=1000 loops=1)
 ```
 
-* B+Tree의 루트부터 수직 탐색( O(log N) )하여 `id = 900001` 리프 노드로 이동합니다.
+* B+Tree의 루트부터 수직 탐색(O(log N))하여 `id = 900001` 리프 노드로 이동합니다.
 * 불필요한 레코드 스캔을 차단하고 필요한 1,000건의 페이지만 읽어 **0.854ms** 만에 연산을 종료합니다.
 
 > **💡 Keyset 페이징과 소켓 커서 스트리밍의 차이**  
-> Keyset(No-Offset) 방식이 매 청크마다 인덱스 B+Tree 수직 탐색( O(log N) )을 통해 성능 개선을 이끌어낸다면 본 프로젝트에 적용한 `JdbcCursorItemReader`는 단 한 번의 커넥션 소켓 오픈으로 커서를 유지하며 선형 탐색( O(N) )만 수행하므로 쿼리 파싱 및 B+Tree 수직 탐색 오버헤드를 배제합니다.
+> Keyset(No-Offset) 방식이 매 청크마다 인덱스 B+Tree 수직 탐색(O(log N))을 통해 성능 개선을 이끌어낸다면, 본 프로젝트에 적용한 `JdbcCursorItemReader`는 단 한 번의 커넥션 소켓 오픈으로 커서를 유지하며 선형 탐색(O(N))만 수행하므로 청크마다 반복되는 쿼리 파싱 및 B+Tree 수직 탐색 오버헤드를 배제합니다.
 
 <br>
 
 ## 4. TO-BE: 소켓 커서 스트리밍과 파이프라인 설계
 
-OFFSET 방식의 한계를 극복하기 위해 배치 파이프라인 구조를 재설계했습니다.
+OFFSET 방식의 물리적 한계를 극복하기 위해 배치 파이프라인을 **소켓 커서 스트리밍·범위 파티셔닝·인메모리 사전 집계 및 벌크 쓰기** 3단계 구조로 재설계했습니다.
 
-<img width="1360" height="1672" alt="image" src="https://github.com/user-attachments/assets/5b3e5c0f-b375-4310-9456-7df15525f0c1" />
-
-### 1) `JdbcCursorItemReader`를 통한 소켓 스트리밍 전환
+### 1) `JdbcCursorItemReader` 기반 소켓 커서 스트리밍 전환
 
 반복적인 `LIMIT/OFFSET` 쿼리 발송을 중단하고 데이터베이스 네트워크 커넥션 소켓을 유지한 채 `ResultSet.next()`로 레코드를 1건씩 스트리밍 수신했습니다.
 
-* **B+Tree 수직 탐색 제거:** 쿼리 파싱 및 B+Tree 순회 비용을 단 1회로 통제했습니다.
+* **B+Tree 수직 탐색 제거:** 쿼리 파싱 및 B+Tree 순회 비용을 파티션당 단 1회로 통제했습니다.
 * **순차 스캔 O(N) 유지:** DB 엔진은 이미 열린 커서의 위치에서 순차 스캔만 수행하므로 전체 100만 건 조회 시간을 선형적으로 단축했습니다.
 
 ### 2) `PartnerIdPartitioner` 기반의 락 격리
@@ -118,39 +114,39 @@ OFFSET 방식의 한계를 극복하기 위해 배치 파이프라인 구조를 
 
 ### 3) In-Memory 집계 및 `rewriteBatchedStatements`
 
-* **JVM Micro-batch:** 1,000건의 청크 데이터를 개별 DB 쓰기로 처리하지 않고 JVM 힙 메모리에서 `aggregatedMap.merge()`로 1차 집계하여 쓰기 요청 수를 99% 절감했습니다.
-* **Multi-Row Bulk Write:** JDBC URL에 `rewriteBatchedStatements=true`를 활성화하여 단건 DML 1,000건을 `INSERT INTO ... VALUES (...), (...), (...)`의 Multi-row 구문으로 통합 전송했습니다.
+* **JVM Micro-batch:** 1,000건의 청크 데이터를 개별 DB 쓰기로 처리하지 않고 JVM 힙 메모리에서 `aggregatedMap.merge()`로 1차 집계하여 쓰기 요청 수를 99% 이상 절감했습니다.
+* **Multi-Row Bulk Write:** JDBC URL에 `rewriteBatchedStatements=true`를 활성화하여 단건 DML을 `INSERT INTO ... VALUES (...), (...), (...) ON DUPLICATE KEY UPDATE ...` 형태의 Multi-row 구문으로 통합 전송했습니다.
 * **fsync() 동기화 오프로딩:** 단건 단위의 트랜잭션 커밋 시 발생하던 100만 번의 디스크 Redo Log `fsync()` 동기 호출을 일괄 처리로 묶어 물리 Disk Write를 **1.8GB에서 26.9MB로 98.5% 절감**했습니다.
 
 <br>
 
 ## 5. 실측 벤치마크 및 계측 데이터 검증
 
-자원 제한 환경(WAS 0.8 Core, DB 1.0 Core)에서 100만 건 결제 정산 배치를 실행하고 Scouter APM을 통해 계측한 정량적 성능 지표입니다.
+자원 제한 환경(WAS 0.8 Core, DB 1.0 Core)에서 100만 건 모의 결제 정산 배치를 실행하고 Scouter APM을 통해 계측한 정량적 성능 지표입니다.
 
 | 지표 항목 | AS-IS (단일 스레드 OFFSET) | TO-BE (파티셔닝 + 커서 스트리밍) | 개선 효과 및 의의 |
 | :--- | :--- | :--- | :--- |
 | **총 처리 소요 시간** | **14분 16.29초 (856,294 ms)** | **1분 9.49초 (69,493 ms)** | **약 12.3배 연산 속도 단축** |
-| **데이터베이스 CPU 점유율** | **최대 87.43%** (임계값 포화) | **평균 16.35%** (자원 연산 전환) | **DB CPU 부하 71.08%p 방어** |
+| **데이터베이스 CPU 점유율** | **최대 87.43%** (임계값 포화) | **평균 16.35%** (자원 연산 전환) | **DB CPU 부하 71.08%p 절감** |
 | **애플리케이션 CPU 점유율** | 평균 16.00% (I/O 대기 정체) | **평균 80.02%** (연산 가동) | **병목 주도권을 WAS 연산 영역으로 전환** |
 | **물리 Disk Write I/O** | **1.8 GB 이상** (100만 회 Upsert) | **26.9 MB로 감소** | **물리 디스크 쓰기 부하 98.5% 절감** |
-| **Scouter SQL Time (Avg, 배치 1회 기준)** | **774,656 ms** (1,004,027 회) | **104 ms** (33 회) | **배치 누적 SQL 지연 99.9% 절감** |
-| **HikariCP 커넥션 상태** | **Connection Leak 경보** 다발 | **0건** (반납 순환 보장) | **장기 점유로 인한 커넥션 고갈 차단** |
-| **정산 금액 정합성** | 100% 일치 (150억 원) | **100% 일치 (150억 원)** | **150억 원 규모 정산 데이터 무결성 검증** |
-| **내결함성** | 예외 1건 발생 시 전체 롤백 | **DLQ (`settlement_error_logs`)** | **최대 100회 Skip 허용 (무중단 가동 100% 통제)** |
+| **Scouter 총 누적 SQL Time (Total)** | **774,656 ms** (1,004,027 회 누적 / 90만 오프셋 단일 774.23 ms) | **104 ms** (33 회 누적) | **누적 SQL 실행 지연 99.9% 절감** |
+| **HikariCP 커넥션 상태** | **Connection Leak 경보** 다발 | **0건** (안정적 반납 및 순환) | **장기 점유로 인한 커넥션 고갈 차단** |
+| **정산 금액 정합성** | 150억 원 규모 모의 정산 100% 일치 | **150억 원 규모 모의 정산 100% 일치** | **정산 데이터 무결성 100% 검증** |
+| **내결함성** | 예외 1건 발생 시 전체 롤백 | **DLQ (`settlement_error_logs`)** | **최대 100회 Skip 허용 (결함 격리 기반 배치 중단 방지)** |
 
 ```text
 [AS-IS JpaPagingItemReader]
 ► txid     = x67an93bkkbga1
 ► elapsed  = 856,294 ms (약 14분 16초)
 ► sqlCount = 1,004,027 회
-► sqlTime  = 774,656 ms
+► sqlTime  = 774,656 ms (총 누적)
 
 [TO-BE JdbcCursorItemReader + Bulk Write]
 ► txid     = x67an93bkkbga4
 ► elapsed  = 69,493 ms (약 1분 9초)
 ► sqlCount = 33 회 (99.99% 절감)
-► sqlTime  = 104 ms (99.99% 절감)
+► sqlTime  = 104 ms (AS-IS 총 누적 774,656 ms 대비 99.99% 절감)
 ```
 
 <br>
@@ -161,13 +157,16 @@ OFFSET 방식의 한계를 극복하기 위해 배치 파이프라인 구조를 
 
 1. **DB Connection 장기 점유:**
     * 스트리밍 방식은 데이터 판독이 끝날 때까지 단일 DB 커넥션을 계속 유지합니다. 배치 작업 처리 시간이 길어지면 커넥션 풀이 고갈되어 일반 사용자의 웹 요청이 블로킹될 수 있습니다.
-    * **대응:** 배치 전용 `DataSource` 및 `HikariCP` 풀을 분리하고 파티션 워커 수(10개)와 커넥션 풀 크기(20개)를 격리 통제했습니다.
+    * **대응:** 파티션 워커 수(10개)에 맞춰 커넥션 풀 크기(HikariCP 20)를 산정·통제했으며, 온라인 트랜잭션(OLTP)과 공존하는 프로덕션 환경에서는 배치 전용 `DataSource` 및 커넥션 풀 물리 격리를 전제로 설계해야 합니다.
 2. **네트워크 소켓 타임아웃:**
     * `ItemProcessor` 단계에서 무거운 외부 연산이 지연될 경우 MySQL 소켓의 `net_write_timeout` 또는 드라이버 `socketTimeout`이 트리거되어 커넥션이 강제 종료될 수 있습니다.
-    * **대응:** Processor 로직을 순수 인메모리 연산으로 유지하고 청크 버퍼 크기를 최적화했습니다.
-3. **스레드 스큐 현상:**
+    * **대응:** Processor 및 Writer 전처리 로직을 순수 인메모리 연산으로 유지하고 청크 버퍼 크기(1,000건)를 최적화했습니다.
+3. **스레드 스큐(Data Skew) 현상:**
     * `PartnerIdPartitioner`로 단순 ID 범위를 균등 분할할 경우 특정 대형 입점사에 데이터가 편중되어 1개 스레드만 지연되는 롱테일 병목이 발생할 수 있습니다.
-    * **대응:** 데이터 편차가 심한 도메인일 경우 ID 범위 분할 대신 사전 집계 통계 기반의 동적 파티셔닝 구조를 검토해야 합니다.
+    * **대응:** 데이터 편차가 심한 도메인일 경우 ID 범위 균등 분할 대신 사전 집계 통계(건수 기반 버킷팅) 기반의 동적 파티셔닝 구조를 검토해야 합니다.
+4. **MySQL Connector/J 기본 버퍼링 주의 (`fetchSize`):**
+    * MySQL JDBC 드라이버는 기본 설정상 ResultSet 전체를 클라이언트 힙 메모리에 한꺼번에 적재하므로, 수백만 건 이상 초고용량 스트리밍 시 OOM 위험이 존재합니다.
+    * **대응:** 드라이버 옵션(`useCursorFetch=true` + 적절한 `fetchSize`) 또는 `Integer.MIN_VALUE` 단건 스트리밍 설정을 병행하여 힙 메모리 상한을 통제해야 합니다.
 
 <br>
 
